@@ -23,11 +23,6 @@ var (
 	nohdrFlag bool
 )
 
-type terse struct {
-	url  string `json:"url,omitempty"`
-	name string `json:"name,omitempty"`
-}
-
 func main() {
 	app := cli.NewApp()
 	app.Name = AppName
