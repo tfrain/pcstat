@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path"
+	pcstat "pcstat/pkg"
 	"sort"
 	"strings"
 
@@ -18,7 +20,13 @@ const (
 var (
 	GitSHA    string
 	BuildTime string
+	nohdrFlag bool
 )
+
+type terse struct {
+	url  string `json:"url,omitempty"`
+	name string `json:"name,omitempty"`
+}
 
 func main() {
 	app := cli.NewApp()
@@ -26,6 +34,7 @@ func main() {
 	app.Version = GitSHA + "-" + BuildTime
 	app.Usage = "page cache stat"
 	app.Writer = os.Stdout
+	// test a test
 	app.Flags = []cli.Flag{
 		&cli.IntFlag{
 			Name:  "pid",
@@ -81,7 +90,7 @@ func main() {
 	app.Action = func(c *cli.Context) error {
 		pidFlag := c.Int("pid")
 		terseFlag := c.Bool("terse")
-		nohdrFlag := c.Bool("nohdr")
+		nohdrFlag = c.Bool("nohdr")
 		jsonFlag := c.Bool("json")
 		unicodeFlag := c.Bool("unicode")
 		plainFlag := c.Bool("plian")
@@ -91,20 +100,32 @@ func main() {
 		sortFlag := c.Bool("sort")
 		files := c.Args().Slice()
 		if pidFlag != 0 {
-			//todo get and append to files
+			// set ns
+			pcstat.SwitchMountNs(pidFlag)
+			// get files
+			maps := getPidMaps(pidFlag)
+			files = append(files, maps...)
 		}
-		
+
 		if len(files) == 0 {
+			// help
 			cli.ShowAppHelpAndExit(c, 1)
 		}
-		stats := make(PcStatusList, len(files))
+		// use length:0. capacity: len(files)
+		stats := make(PcStatusList, 0, len(files))
 		for _, fname := range files {
-			// todo get status
-
-			if bnameFlag {}
+			status, err := pcstat.GetPcStatus(fname)
+			if err != nil {
+				log.Printf("skipping %q: %v", fname, err)
+				continue
+			}
+			if bnameFlag {
+				status.Name = path.Base(fname)
+			}
+			stats = append(stats, status)
 		}
 		if sortFlag {
-			sort.Slice(stats, func(i, j int) bool{
+			sort.Slice(stats, func(i, j int) bool {
 				return stats[i].Cached > stats[j].Cached
 			})
 		}
@@ -139,14 +160,17 @@ func getPidMaps(pid int) []string {
 	scanner := bufio.NewScanner(f)
 
 	// use a map to help avoid duplicates
-	maps := make(map[string]bool)
+	maps := make(map[string]struct{})
 
 	for scanner.Scan() {
 		line := scanner.Text()
 		parts := strings.Fields(line)
 		if len(parts) == 6 && strings.HasPrefix(parts[5], "/") {
 			// found something that looks like a file
-			maps[parts[5]] = true
+			if _, ok := maps[parts[5]]; ok {
+				continue
+			}
+			maps[parts[5]] = struct{}{}
 		}
 	}
 
